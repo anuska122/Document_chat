@@ -1,0 +1,22 @@
+venv/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+.env
+.DS_Store
+*.pyo
+*.pyd
+
+# Logs
+*.log
+logs/
+output/
+# Docker
+*.pid
+*.tar
+# Data
+uploads/
+data/
+storage/
+*.sqlite3
