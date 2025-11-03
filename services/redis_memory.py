@@ -18,8 +18,8 @@ class RedisMemoryManager:
                 f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}",
                 password = settings.REDIS_PASSWORD,
                 db=settings.REDIS_DB,
-                encoding='utf=8',
-                decode_response=True                    
+                encoding='utf-8',
+                # decode_response=True                    
             )
             logger.info("Connected sucessfully")
         except Exception as e:

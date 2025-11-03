@@ -1,8 +1,5 @@
-# config.py - Simplified Configuration (NO MORE ISSUES!)
-
 from pydantic_settings import BaseSettings
 from typing import Optional
-
 
 class Settings(BaseSettings):
     """Environment configuration for RAG Backend"""
@@ -12,26 +9,25 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
 
-    # Hugging Face (REQUIRED in .env)
-    HUGGINGFACE_API_KEY: str
-    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
-    EMBEDDING_DIMENSION: int = 384 
+    OPENAI_API_KEY: str
+    EMBEDDING_MODEL: str = "text-embedding-ada-002"
+    EMBEDDING_DIMENSION: int = 1536 
 
     # LLM
-    LLM_MODEL: str = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+    LLM_MODEL: str = "gpt-4o-mini"
     LLM_TEMPERATURE: float = 0.7
     LLM_MAX_TOKENS: int = 512
 
-    # Pinecone (REQUIRED in .env)
+    # Pinecone 
     PINECONE_API_KEY: str
-    PINECONE_ENVIRONMENT: str = "us-east-1-aws"
+    PINECONE_ENVIRONMENT: str = "us-east-1"
     PINECONE_INDEX_NAME: str = "rag-documents"
-    PINECONE_DIMENSION: int = 384
+    PINECONE_DIMENSION: int = 1536
 
-    # Database - Will be loaded from .env
+    # Database 
     DATABASE_URL: str = "postgresql://raguser:ragpassword@localhost:5432/ragdb"
 
-    # Redis - Will be loaded from .env
+    # Redis
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
@@ -49,8 +45,8 @@ class Settings(BaseSettings):
     SEMANTIC_CHUNK_MAX: int = 600
 
     # RAG
-    TOP_K_RESULTS: int = 5
-    SIMILARITY_THRESHOLD: float = 0.7
+    TOP_K_RESULTS: int = 10
+    SIMILARITY_THRESHOLD: float = 0.0
     MAX_CONTEXT_LENGTH: int = 3000
 
     # Logging
@@ -61,5 +57,5 @@ class Settings(BaseSettings):
         case_sensitive = True
 
 
-# Global settings instance (NO CACHE - NO PROBLEMS!)
+# Global settings instance
 settings = Settings()

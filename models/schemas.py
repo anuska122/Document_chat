@@ -37,17 +37,14 @@ class ChatRequest(BaseModel):
     """Request for chat endpoint"""
     session_id: str = Field(..., min_length=1, max_length=100, description="Unique session identifier")
     message: str = Field(..., min_length=1, max_length=2000, description="User message")
-    document_ids: Optional[List[str]] = Field(
-        None,
-        description="Specific documents to search (empty = search all)"
-    )
+    document_ids: Optional[List[str]] = None
     
     class Config:
         json_schema_extra = {
             "example": {
                 "session_id": "user_123",
                 "message": "What is Operating System?",
-                "document_ids": ["doc_abc123"]
+                "document_ids": None
             }
         }
 

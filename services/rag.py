@@ -1,7 +1,6 @@
-from typing import List,Dict,Optional
+from typing import List, Dict, Optional
 import logging
-from huggingface_hub import InferenceClient
-import asyncio
+from openai import AsyncOpenAI
 from services.embeddings import generate_embedding
 from services.redis_memory import get_chat_history, add_to_history
 from db.vector_db import query_vectors
@@ -9,107 +8,155 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class CustomRAGPipeline:
     def __init__(self):
-        self.client = InferenceClient(
-            model=settings.LLM_MODEL,
-            token = settings.HUGGINGFACE_API_KEY
-        )
+        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        self.model = settings.LLM_MODEL
         self.top_k = settings.TOP_K_RESULTS
         self.similarity_threshold = settings.SIMILARITY_THRESHOLD
-        logger.info(f"RAG pipeline initialized: {settings.LLM_MODEL}")
+        logger.info(f"RAG pipeline initialized with OpenAI model: {settings.LLM_MODEL}")
 
-    async def retrieve_relevant_chunks(self,query:str,document_ids:Optional[List[str]]=None) -> List[Dict]:
+    async def retrieve_relevant_chunks(
+        self, 
+        query: str, 
+        document_ids: Optional[List[str]] = None
+    ) -> List[Dict]:
         try:
             query_embedding = await generate_embedding(query)
-            #query vector db
-            results = await query_vectors(embedding=query_embedding,top_k=self.top_k,document_ids=document_ids)
+            logger.info(f"Query: '{query}' → embedding generated")
 
-            #filtered by similarity threshold
-            self.similarity_threshold = 0
-            filtered_results = results
-            logger.info(f"Retrieved {len(filtered_results)} chunks above threshold")
-            return filtered_results
+            results = await query_vectors(
+                embedding=query_embedding,
+                top_k=self.top_k,
+                document_ids=document_ids
+            )
+
+            logger.info(f"Pinecone returned {len(results)} results")
+            for i, r in enumerate(results):
+                score = r.get("score", 0.0)
+                text = r.get("metadata", {}).get("text", "NO TEXT")[:120]
+                source = r.get("metadata", {}).get("source", "unknown")
+                logger.info(f"  [{i+1}] Score: {score:.4f} | Source: {source} | Text: {text}...")
+
+            filtered = [r for r in results if r.get("score", 0) >= self.similarity_threshold]
+            logger.info(f"Threshold {self.similarity_threshold} → {len(filtered)} chunks kept")
+
+            return filtered
         except Exception as e:
-            logger.error(f"Retrieval error:{str(e)}")
-            raise
+            logger.error(f"Retrieval error: {e}", exc_info=True)
+            return []
 
-    def build_context(self,chunks:List[Dict]) -> str:
-        """building context string from retrieved chunks"""
+    def build_context(self, chunks: List[Dict]) -> str:
+        """Building context string from retrieved chunks"""
         if not chunks:
             return "No relevant context found."
+        
         context_parts = []
-        for i, chunks in enumerate(chunks, 1):
-            text = chunks.get('metadata', {}).get('text','')
-            source = chunks.get('metadata',{}).get('source','Unknown')
+        for i, chunk in enumerate(chunks, 1):
+            text = chunk.get('metadata', {}).get('text', '')
+            source = chunk.get('metadata', {}).get('source', 'Unknown')
             context_parts.append(f"[Source {i}: {source}]\n{text}\n")
+        
         return "\n".join(context_parts)
     
-    async def build_prompt(self,query:str,context:str,session_id:str)->str:
-        """building complete prompt with context and history"""
+    async def build_messages(
+        self, 
+        query: str, 
+        context: str, 
+        session_id: str
+    ) -> List[Dict[str, str]]:
+        
         history = await get_chat_history(session_id)
-        prompt = f"""<s>[INST] You are a helpful AI assistant. Answer the question based on the provided context. If the context doesn't contain relevant information, say so clearly. Be concise and accurate.
-        Context:
-       {context}"""
         
+        # System message with context
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful AI assistant. Answer questions based on the provided context. "
+                    "If the context doesn't contain relevant information, say so clearly. "
+                    "Be concise and accurate.\n\n"
+                    f"Context:\n{context}"
+                )
+            }
+        ]
+        
+        # Adding conversation history
         if history:
-            prompt +="\n\nPrevious conversation:\n"
-            for msg in history[-6:]:
-                role = msg.get('role','')
-                content = msg.get('content','')
-                if role == 'user':
-                    prompt += f"user: {content}\n"
-                elif role == 'assistant':
-                    prompt += f"Assistant: {content}\n"
-        prompt += f"\nQuestion: {query}\n\nAnswer: [/INST]"
+            for msg in history[-6:]:  # Last 6 messages
+                role = msg.get('role', '')
+                content = msg.get('content', '')
+                if role in ['user', 'assistant']:
+                    messages.append({"role": role, "content": content})
         
-        return prompt
-    async def generate_response(self,prompt:str) -> str:
+        # Adding current query
+        messages.append({"role": "user", "content": query})
+        
+        return messages
+
+    async def generate_response(self, messages: List[Dict[str, str]]) -> str:
+        """Generates response using OpenAI Chat Completion API"""
         try:
-            # Calling HuggingFace Inference API in thread to avoid blocking
-            response = await asyncio.to_thread(
-                self.client.text_generation,
-                prompt,
-                max_new_tokens=settings.LLM_MAX_TOKENS,
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=settings.LLM_MAX_TOKENS,
                 temperature=settings.LLM_TEMPERATURE,
-                do_sample=True,
-                top_p=0.95,
-                repetition_penalty=1.15
+                top_p=0.95
             )
-            # Cleaning up response
-            answer = response.strip()
             
-            # Removing any instruction tokens that might leak through
-            answer = answer.replace("[INST]", "").replace("[/INST]", "").replace("</s>", "").strip()
-            
+            answer = response.choices[0].message.content.strip()
             logger.info(f"Generated response: {answer[:100]}...")
             return answer
             
         except Exception as e:
             logger.error(f"Generation error: {str(e)}")
-            # Fallback response
-            return "I apologize, but I encountered an error generating a response. Please try again or rephrase your question."
-    async def process_query(self,query:str,session_id:str,document_ids:Optional[List[str]]=None)->Dict:
-        """Complete RAG pipeline: Retrieve → Build Prompt → Generate → Store"""
+            return (
+                "I apologize, but I encountered an error generating a response. "
+                "Please try again or rephrase your question."
+            )
+
+    async def process_query(
+        self, 
+        query: str, 
+        session_id: str, 
+        document_ids: Optional[List[str]] = None
+    ) -> Dict:
+        """Complete RAG pipeline: Retrieve → Build Messages → Generate → Store"""
         try:
-            logger.info(f"Query is being processed: {query[:100]}...")
-            chunks = await self.retrieve_relevant_chunks(query,document_ids)
+            logger.info(f"Processing query: {query[:100]}...")
+            
+            # Retrieve relevant chunks
+            chunks = await self.retrieve_relevant_chunks(query, document_ids)
+            
             if not chunks:
-                return{
-                    "response":"I couldn't find relevant information in the uploaded documents to answer your question. Please try rephrasing or uploading more relevant documents.",
-                    "source":[],
-                    "session_id":session_id,
-                    "confidence_score":0.0
+                return {
+                    "response": (
+                        "I couldn't find relevant information in the uploaded documents "
+                        "to answer your question. Please try rephrasing or uploading "
+                        "more relevant documents."
+                    ),
+                    "sources": [],
+                    "session_id": session_id,
+                    "confidence_score": 0.0
                 }
-            #building context
+            
+            # Building context and messages
             context = self.build_context(chunks)
-            #prompt with history
-            prompt = await self.build_prompt(query,context,session_id)
-            #generate response
-            response = await self.generate_response(prompt)
-            #storing
-            await add_to_history(session_id=session_id,user_message=query,assistant_message=response)
-            #sources 
+            messages = await self.build_messages(query, context, session_id)
+            
+            #response generation
+            response = await self.generate_response(messages)
+            
+            # Storing in history
+            await add_to_history(
+                session_id=session_id,
+                user_message=query,
+                assistant_message=response
+            )
+            
+            # sources preparation
             sources = [
                 {
                     "document": chunk.get('metadata', {}).get('source', 'Unknown'),
@@ -119,27 +166,29 @@ class CustomRAGPipeline:
                 }
                 for chunk in chunks
             ]
-            #confidence calculation
-            avg_score = sum(c.get('score',0) for c in chunks) / len(chunks)
-            return{
-                "response":response,
-                "sources":sources,
-                "session_id":session_id,
-                "confidence_score":round(avg_score, 2)
+            
+            # Calculating confidence
+            avg_score = sum(c.get('score', 0) for c in chunks) / len(chunks)
+            
+            return {
+                "response": response,
+                "sources": sources,
+                "session_id": session_id,
+                "confidence_score": round(avg_score, 2)
             }
+            
         except Exception as e:
-            logger.error(f"Error occured: {str(e)}", exc_info=True)
+            logger.error(f"Error occurred: {str(e)}", exc_info=True)
             raise
+
+
 rag_pipeline = CustomRAGPipeline()
+
+
 async def run_rag(
     query: str,
     session_id: str,
     document_ids: Optional[List[str]] = None
 ) -> Dict:
+    """Convenience wrapper for RAG pipeline"""
     return await rag_pipeline.process_query(query, session_id, document_ids)
-
-
-    
-
-
-

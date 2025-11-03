@@ -1,5 +1,3 @@
-# utils/file_handler.py - File Processing Utilities
-
 import logging
 from pathlib import Path
 from typing import Tuple
@@ -20,14 +18,7 @@ class FileHandler:
     
     def validate_file(self, file: UploadFile) -> Tuple[bool, str]:
         """
-        Validate uploaded file
-        
-        Args:
-            file: Uploaded file
-            
-        Returns:
-            (is_valid, error_message)
-        """
+        Validate uploaded file """
         if not file or not file.filename:
             return False, "No file provided"
         
@@ -39,14 +30,7 @@ class FileHandler:
     
     async def extract_text_from_pdf(self, file_content: bytes) -> str:
         """
-        Extract text from PDF using PyMuPDF
-        
-        Args:
-            file_content: PDF file bytes
-            
-        Returns:
-            Extracted text
-        """
+        Extracts text from PDF using PyMuPDF"""
         try:
             pdf_document = fitz.open(stream=file_content, filetype="pdf")
             
@@ -70,15 +54,7 @@ class FileHandler:
             )
     
     async def extract_text_from_txt(self, file_content: bytes) -> str:
-        """
-        Extract text from TXT file
-        
-        Args:
-            file_content: TXT file bytes
-            
-        Returns:
-            Decoded text
-        """
+        """Extracts text from TXT file"""
         try:
             encodings = ['utf-8', 'latin-1', 'cp1252']
             
@@ -102,15 +78,7 @@ class FileHandler:
             )
     
     async def process_file(self, file: UploadFile) -> Tuple[str, int]:
-        """
-        Process uploaded file and extract text
-        
-        Args:
-            file: Uploaded file
-            
-        Returns:
-            (extracted_text, file_size_bytes)
-        """
+        """Process uploaded file and extract text"""
         # Validate file
         is_valid, error_msg = self.validate_file(file)
         if not is_valid:
@@ -157,13 +125,5 @@ file_handler = FileHandler()
 
 
 async def process_uploaded_file(file: UploadFile) -> Tuple[str, int]:
-    """
-    Convenience function to process file
-    
-    Args:
-        file: Uploaded file
-        
-    Returns:
-        (text, file_size)
-    """
+    """Convenience function to process file"""
     return await file_handler.process_file(file)
