@@ -1,7 +1,5 @@
-from pydantic import BaseModel, Field, EmailStr, field_validator
+from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import datetime, time as dtime
-from datetime import datetime, date as ddate
 from enum import Enum
 
 class ChunkingStrategy(str, Enum):
@@ -16,6 +14,9 @@ class IngestionResponse(BaseModel):
     document_id: str = Field(..., description="Unique document identifier")
     filename: str = Field(..., description="Original filename")
     chunks_created: int = Field(..., ge=0, description="Number of chunks created")
+    document_tokens: int = Field(..., ge=0, description="Tokens in the extracted document text")
+    embedding_tokens: int = Field(..., ge=0, description="Total chunk tokens sent for embedding")
+    chunk_token_counts: List[int] = Field(..., description="Token count for each chunk")
     status: str = Field(..., description="Processing status")
     processing_time_ms: Optional[int] = Field(None, description="Processing time in milliseconds")
     
@@ -25,6 +26,9 @@ class IngestionResponse(BaseModel):
                 "document_id": "doc_abc123",
                 "filename": "report.pdf",
                 "chunks_created": 42,
+                "document_tokens": 12840,
+                "embedding_tokens": 14120,
+                "chunk_token_counts": [350, 420, 390],
                 "status": "success",
                 "processing_time_ms": 1250
             }
@@ -81,57 +85,6 @@ class ChatResponse(BaseModel):
             }
         }
 
-
-#Interview Booking
-
-class InterviewBookingRequest(BaseModel):
-    """Request to book an interview"""
-    name: str = Field(..., min_length=2, max_length=100, description="Full name")
-    email: EmailStr = Field(..., description="Email address")
-    date: ddate = Field(..., description="Interview date (YYYY-MM-DD)")
-    time: dtime = Field(..., description="Interview time (HH:MM)")
-    notes: Optional[str] = Field(None, max_length=500, description="Additional notes")
-    
-    @field_validator('date')
-    @classmethod
-    def date_must_be_future(cls, v):
-        """Validate that date is in the future"""
-        if v < datetime.now().date():
-            raise ValueError('Interview date must be in the future')
-        return v
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "name": "Anushka Hadkhale",
-                "email": "anushka@example.com",
-                "date": "2025-11-15",
-                "time": "14:00",
-                "notes": "Preferred platform: Zoom"
-            }
-        }
-
-
-class InterviewBookingResponse(BaseModel):
-    """Response from booking interview"""
-    booking_id: str = Field(..., description="Unique booking identifier")
-    status: str = Field(..., description="Booking status")
-    details: dict = Field(..., description="Booking details")
-    confirmation_sent: bool = Field(..., description="Whether confirmation email was sent")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "booking_id": "booking_xyz789",
-                "status": "confirmed",
-                "details": {
-                    "name": "Anushka Hadkhale",
-                    "email": "anushka@example.com",
-                    "scheduled_at": "2025-11-15T14:00:00"
-                },
-                "confirmation_sent": True
-            }
-        }
 
 
 #Error Response

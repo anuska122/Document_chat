@@ -16,9 +16,10 @@ alembic==1.12.1
 redis==5.0.1
 
 # Vector Database - Pinecone
-pinecone-client==2.2.4
+pinecone==6.0.2
 
-# OpenAI
+# LLM - Groq (primary) and OpenAI (for embeddings)
+groq==0.4.1
 openai==1.54.0
 tiktoken==0.7.0
 
@@ -28,7 +29,6 @@ pdfminer.six==20221105
 pypdf==3.17.1
 
 # Text Processing
-tiktoken==0.5.1
 nltk==3.8.1
 langdetect==1.0.9
 
@@ -50,3 +50,4 @@ mypy==1.7.1
 
 # Monitoring (Optional)
 prometheus-client==0.19.0
+sentence-transformers==2.2.2

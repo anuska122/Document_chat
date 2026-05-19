@@ -2,6 +2,7 @@ import json
 import logging
 from typing import List, Dict
 import redis.asyncio as aioredis
+from redis.exceptions import RedisError
 
 from config import settings
 
@@ -14,17 +15,21 @@ class RedisMemoryManager:
     
     async def connect(self):
         try:
-            self.redis_client = await aioredis.from_url(
+            self.redis_client = aioredis.from_url(
                 f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}",
                 password = settings.REDIS_PASSWORD,
                 db=settings.REDIS_DB,
                 encoding='utf-8',
-                # decode_response=True                    
+                decode_responses=True
             )
-            logger.info("Connected sucessfully")
-        except Exception as e:
-            logger.error(f"connection error: {str(e)}")
-            raise
+            await self.redis_client.ping()
+            logger.info("Connected to Redis successfully")
+        except RedisError as e:
+            self.redis_client = None
+            logger.warning(
+                "Redis unavailable; chat history will be disabled: %s",
+                e,
+            )
     
     async def disconnect(self):
         if self.redis_client:
@@ -35,6 +40,9 @@ class RedisMemoryManager:
         return f"chat:session:{session_id}"
     
     async def get_history(self,session_id:str)->List[Dict[str,str]]:
+        if not self.redis_client:
+            return []
+
         try:
             key=self._get_key(session_id)
             history_json = await self.redis_client.get(key)
@@ -45,11 +53,15 @@ class RedisMemoryManager:
             else:
                 logger.debug(f"No history found for session {session_id}")
                 return []
-        except Exception as e:
-            logger.error(f"Error generated {str(e)}")
+        except RedisError as e:
+            logger.warning(f"Could not read Redis history: {str(e)}")
             return []
     
     async def add_message(self,session_id:str,role:str,content:str):
+        if not self.redis_client:
+            logger.debug("Skipping chat history write because Redis is unavailable")
+            return
+
         try:
             key = self._get_key(session_id)
             #getting existing history
@@ -62,9 +74,9 @@ class RedisMemoryManager:
                 history=history[-20:]
             await self.redis_client.setex(key,self.session_expire,json.dumps(history))
             logger.debug(f"Added {role} message to session {session_id}")
-        except Exception as e:
-            logger.error(f"Error ocurred: {str(e)}")
-            raise
+        except RedisError as e:
+            logger.warning(f"Could not write Redis history: {str(e)}")
+
     async def add_exchange(
         self,
         session_id: str,
@@ -75,21 +87,26 @@ class RedisMemoryManager:
         await self.add_message(session_id, "assistant", assistant_message)
 
     async def clear_history(self, session_id: str):
+        if not self.redis_client:
+            return
+
         try:
             key = self._get_key(session_id)
             await self.redis_client.delete(key)
             logger.info(f"Cleared history for session {session_id}")
-        except Exception as e:
-            logger.error(f"Error clearing history: {str(e)}")
-            raise
+        except RedisError as e:
+            logger.warning(f"Could not clear Redis history: {str(e)}")
 
     async def get_session_count(self) -> int:
         """total number of active sessions"""
+        if not self.redis_client:
+            return 0
+
         try:
             keys = await self.redis_client.keys("chat:session:*")
             return len(keys)
-        except Exception as e:
-            logger.error(f"Error counting sessions: {str(e)}")
+        except RedisError as e:
+            logger.warning(f"Could not count Redis sessions: {str(e)}")
             return 0
 
 memory_manager = RedisMemoryManager()

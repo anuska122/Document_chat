@@ -1,3 +1,3 @@
-from db.sql_db import Document, InterviewBooking, Base
+from db.sql_db import Document, Base
 
-__all__ = ["Document", "InterviewBooking", "Base"]
+__all__ = ["Document", "Base"]

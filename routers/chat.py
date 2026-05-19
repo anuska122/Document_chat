@@ -1,16 +1,12 @@
 import logging
-import uuid
 from fastapi import APIRouter, HTTPException
 from models.schemas import (
     ChatRequest,
     ChatResponse,
-    InterviewBookingRequest,
-    InterviewBookingResponse,
     SourceChunk,
 )
 from services.rag import run_rag
 from services.redis_memory import get_chat_history, clear_session
-from db.sql_db import create_booking, get_all_bookings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -83,58 +79,6 @@ async def clear_session_history(session_id: str):
         logger.error(f"Error clearing chat history for {session_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to clear session history.")
 
-@router.post("/book-interview", response_model=InterviewBookingResponse)
-async def book_interview(request: InterviewBookingRequest):
-    """Books an interview schedule and validates request and saves booking data to the database."""
-    try:
-        booking_id = f"booking_{uuid.uuid4().hex[:12]}"
-        logger.info(f"Booking request from {request.email} (ID={booking_id})")
-
-        await create_booking(
-            booking_id=booking_id,
-            name=request.name,
-            email=request.email,
-            interview_date=str(request.date),
-            interview_time=str(request.time),
-            notes=request.notes,
-        )
-
-        details = {
-            "name": request.name,
-            "email": request.email,
-            "scheduled_at": f"{request.date}T{request.time}:00",
-            "notes": request.notes,
-        }
-
-        logger.info(f"Booking created successfully (ID={booking_id})")
-
-        return InterviewBookingResponse(
-            booking_id=booking_id,
-            status="confirmed",
-            details=details,
-            confirmation_sent=True,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Booking error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create interview booking.")
-
-
-@router.get("/bookings")
-async def list_bookings():
-    """Retrieve a list of all interview bookings."""
-    try:
-        bookings = await get_all_bookings()
-        return {
-            "total_bookings": len(bookings),
-            "bookings": bookings,
-        }
-    except Exception as e:
-        logger.error(f"Error listing bookings: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve bookings.")
-
 @router.get("/stats")
 async def get_system_stats():
     """
@@ -142,7 +86,6 @@ async def get_system_stats():
     - Total documents
     - Total chunks
     - Total active conversations
-    - Total bookings
     """
     try:
         from db.sql_db import get_stats
@@ -155,7 +98,6 @@ async def get_system_stats():
             "total_documents": stats.get("total_documents", 0),
             "total_chunks": stats.get("total_chunks", 0),
             "total_conversations": session_count,
-            "total_bookings": stats.get("total_bookings", 0),
         }
     except Exception as e:
         logger.error(f"Error retrieving system stats: {e}", exc_info=True)

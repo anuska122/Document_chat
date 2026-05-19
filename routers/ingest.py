@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter,UploadFile,File,HTTPException,Query
 from models.schemas import IngestionResponse, ChunkingStrategy
 from utils.file_handler import process_uploaded_file
-from services.chunking import chunk_document
+from services.chunking import chunk_document, count_tokens
 from services.embeddings import generate_embeddings
 from db.vector_db import upsert_embeddings
 from db.sql_db import create_document
@@ -23,12 +23,22 @@ async def ingest_documnet(
         logger.info(f"Starting ingestion for file: {file.filename}")
         #text extract
         text,file_size = await process_uploaded_file(file) #-> its converts uploaded file(pdf,docx) into plain text
-        logger.info(f"Extracted {len(text)} characters")
+        document_tokens = count_tokens(text)
+        logger.info(
+            f"Extracted {len(text)} characters ({document_tokens} tokens)"
+        )
         #text chunk
         chunks = chunk_document(text,strategy=strategy.value)
         if not chunks:
             raise HTTPException(status_code=400,detail="No chunks created from document")
-        logger.info(f"Chunks {len(chunks)} created")
+        chunk_token_counts = [count_tokens(chunk) for chunk in chunks]
+        embedding_tokens = sum(chunk_token_counts)
+        logger.info(
+            "Chunks %s created | embedding tokens=%s | per chunk=%s",
+            len(chunks),
+            embedding_tokens,
+            chunk_token_counts,
+        )
         #document id generation
         document_id = f"doc_{uuid.uuid4().hex[:12]}"
         #embedding generation
@@ -40,6 +50,7 @@ async def ingest_documnet(
             {
                 "source":file.filename,
                 "chunk_index":i,
+                "token_count": chunk_token_counts[i],
                 "chunking_strategy":strategy.value
             }
             for i in range(len(chunks))
@@ -49,7 +60,16 @@ async def ingest_documnet(
 
         processing_time = int((time.time()- start_time) * 1000)
         logger.info(f"Ingestion completed in {processing_time}ms")
-        return IngestionResponse(document_id=document_id,filename=file.filename,chunks_created=len(chunks),status="success",processing_time_ms=processing_time)
+        return IngestionResponse(
+            document_id=document_id,
+            filename=file.filename,
+            chunks_created=len(chunks),
+            document_tokens=document_tokens,
+            embedding_tokens=embedding_tokens,
+            chunk_token_counts=chunk_token_counts,
+            status="success",
+            processing_time_ms=processing_time,
+        )
     except HTTPException:
         raise
     except Exception as e:

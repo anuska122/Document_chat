@@ -2,7 +2,6 @@ import logging
 from typing import List, Dict, Optional
 from pinecone import Pinecone, ServerlessSpec
 import asyncio
-import time
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -25,8 +24,32 @@ class VectorDatabase:
             existing_indexes = [idx.name for idx in self.pc.list_indexes()]
             logger.info(f"Existing indexes: {existing_indexes}")
 
+            if self.index_name in existing_indexes:
+                existing_dimension = await self._get_index_dimension(
+                    self.index_name
+                )
+                if (
+                    existing_dimension is not None
+                    and existing_dimension != self.dimension
+                ):
+                    configured_index = self.index_name
+                    self.index_name = self._dimensioned_index_name(
+                        configured_index
+                    )
+                    logger.warning(
+                        "Index '%s' has dimension %s, but configured "
+                        "embeddings use dimension %s. Using compatible "
+                        "index '%s' instead.",
+                        configured_index,
+                        existing_dimension,
+                        self.dimension,
+                        self.index_name,
+                    )
+
             if self.index_name not in existing_indexes:
-                logger.warning(f"⚠️ Index '{self.index_name}' not found — creating new one...")
+                logger.warning(
+                    f"Index '{self.index_name}' not found; creating it..."
+                )
                 self.pc.create_index(
                     name=self.index_name,
                     dimension=self.dimension,
@@ -48,14 +71,61 @@ class VectorDatabase:
             # Connect to the index
             self.index = self.pc.Index(self.index_name)
             stats = await asyncio.to_thread(self.index.describe_index_stats)
+            index_dimension = stats.get("dimension", 0)
+
+            if index_dimension != self.dimension:
+                raise RuntimeError(
+                    f"Pinecone index '{self.index_name}' has dimension "
+                    f"{index_dimension}, but PINECONE_DIMENSION is "
+                    f"{self.dimension}. Create a matching index or update "
+                    "your embedding configuration."
+                )
 
             logger.info(f"Connected to '{self.index_name}' — "
                         f"Vectors: {stats.get('total_vector_count', 0)}, "
-                        f"Dim: {stats.get('dimension', 0)}")
+                        f"Dim: {index_dimension}")
 
         except Exception as e:
             logger.error(f"Pinecone init failed: {e}", exc_info=True)
             raise
+
+    async def _get_index_dimension(self, index_name: str) -> Optional[int]:
+        """Return Pinecone index dimension when available."""
+        try:
+            description = await asyncio.to_thread(
+                self.pc.describe_index,
+                index_name,
+            )
+        except Exception as e:
+            logger.warning(
+                "Could not describe Pinecone index '%s': %s",
+                index_name,
+                e,
+            )
+            return None
+
+        dimension = getattr(description, "dimension", None)
+        if dimension is None and isinstance(description, dict):
+            dimension = description.get("dimension")
+
+        return int(dimension) if dimension is not None else None
+
+    def _dimensioned_index_name(self, index_name: str) -> str:
+        """Build a Pinecone index name tied to the configured vector size."""
+        suffix = f"-{self.dimension}"
+        if index_name.endswith(suffix):
+            return index_name
+
+        max_length = 45
+        base = index_name[: max_length - len(suffix)].rstrip("-")
+        return f"{base}{suffix}"
+
+    def _validate_embedding_dimension(self, embedding: List[float]) -> None:
+        if len(embedding) != self.dimension:
+            raise ValueError(
+                f"Vector dimension {len(embedding)} does not match "
+                f"PINECONE_DIMENSION={self.dimension}."
+            )
 
     async def upsert_vectors(self, vectors: List[tuple], namespace: str = "") -> dict:
         """Insert or update vectors"""
@@ -63,6 +133,12 @@ class VectorDatabase:
             if not vectors:
                 logger.warning("No vectors to upsert.")
                 return {}
+
+            for vector_id, embedding, _ in vectors:
+                try:
+                    self._validate_embedding_dimension(embedding)
+                except ValueError as e:
+                    raise ValueError(f"{vector_id}: {e}") from e
 
             logger.info(f"Upserting {len(vectors)} vectors (namespace='{namespace or 'default'}')")
 
@@ -92,6 +168,8 @@ class VectorDatabase:
     ) -> List[Dict]:
         """Query similar vectors"""
         try:
+            self._validate_embedding_dimension(embedding)
+
             logger.info(f"🔍 Querying Pinecone (Top K={top_k}, Namespace='{namespace or 'default'}')")
             logger.info(f"   Filter: {filter_dict or 'None'} | Embedding dim: {len(embedding)}")
 
@@ -201,3 +279,11 @@ async def query_vectors(
 
 async def delete_document_vectors(document_id: str):
     await vector_db.delete_by_document(document_id, namespace="")
+
+
+async def close_vector_db():
+    """Close Pinecone connection."""
+    try:
+        logger.info("Pinecone connection closed")
+    except Exception as e:
+        logger.error(f"Error closing Pinecone: {str(e)}")

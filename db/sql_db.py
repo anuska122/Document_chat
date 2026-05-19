@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, String, Integer, DateTime, Text, Boolean
+from sqlalchemy import Column, String, Integer, DateTime
 from datetime import datetime
 
 from config import settings
@@ -49,33 +49,6 @@ class Document(Base):
         }
 
 
-class InterviewBooking(Base):
-    """Interview booking table"""
-    __tablename__ = "interview_bookings"
-    
-    id = Column(String, primary_key=True)
-    name = Column(String, nullable=False)
-    email = Column(String, nullable=False)
-    interview_date = Column(String, nullable=False)
-    interview_time = Column(String, nullable=False)
-    notes = Column(Text, nullable=True)
-    status = Column(String, default="confirmed")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    confirmation_sent = Column(Boolean, default=False)
-    
-    def to_dict(self):
-        return {
-            "booking_id": self.id,
-            "name": self.name,
-            "email": self.email,
-            "interview_date": self.interview_date,
-            "interview_time": self.interview_time,
-            "notes": self.notes,
-            "status": self.status,
-            "created_at": self.created_at.isoformat(),
-            "confirmation_sent": self.confirmation_sent
-        }
-    
 #Database Functions
 
 async def init_db():
@@ -98,7 +71,13 @@ async def get_db():
             await session.close()
 
 
-#Document CRUD
+async def close_db():
+    """Close database connections."""
+    try:
+        await engine.dispose()
+        logger.info("Database connection disposed")
+    except Exception as e:
+        logger.error(f"Error closing database: {str(e)}")
 
 async def create_document(
     document_id: str,
@@ -142,42 +121,6 @@ async def get_all_documents():
         return [doc.to_dict() for doc in documents]
 
 
-#Interview Booking CRUD 
-
-async def create_booking(
-    booking_id: str,
-    name: str,
-    email: str,
-    interview_date: str,
-    interview_time: str,
-    notes: str = None
-):
-    """Creating interview booking"""
-    async with AsyncSessionLocal() as session:
-        booking = InterviewBooking(
-            id=booking_id,
-            name=name,
-            email=email,
-            interview_date=interview_date,
-            interview_time=interview_time,
-            notes=notes,
-            confirmation_sent=True
-        )
-        session.add(booking)
-        await session.commit()
-        logger.info(f"Created booking: {booking_id}")
-        return booking.to_dict()
-
-
-async def get_all_bookings():
-    """Getting all bookings"""
-    async with AsyncSessionLocal() as session:
-        from sqlalchemy import select
-        result = await session.execute(select(InterviewBooking))
-        bookings = result.scalars().all()
-        return [booking.to_dict() for booking in bookings]
-
-
 async def get_stats():
     """Get database statistics"""
     async with AsyncSessionLocal() as session:
@@ -187,10 +130,6 @@ async def get_stats():
         doc_count = await session.execute(select(func.count(Document.id)))
         total_docs = doc_count.scalar()
         
-        # Counting bookings
-        booking_count = await session.execute(select(func.count(InterviewBooking.id)))
-        total_bookings = booking_count.scalar()
-        
         # chunks sum
         chunk_sum = await session.execute(select(func.sum(Document.chunk_count)))
         total_chunks = chunk_sum.scalar() or 0
@@ -198,5 +137,4 @@ async def get_stats():
         return {
             "total_documents": total_docs,
             "total_chunks": int(total_chunks),
-            "total_bookings": total_bookings
         }

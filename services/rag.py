@@ -1,6 +1,12 @@
 from typing import List, Dict, Optional
+import asyncio
+import json
 import logging
-from openai import AsyncOpenAI
+import urllib.error
+import urllib.request
+
+from groq import AsyncGroq
+
 from services.embeddings import generate_embedding
 from services.redis_memory import get_chat_history, add_to_history
 from db.vector_db import query_vectors
@@ -11,11 +17,32 @@ logger = logging.getLogger(__name__)
 
 class CustomRAGPipeline:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        # Use the configured provider for LLM inference.
+        self.provider = settings.LLM_PROVIDER.lower()
         self.model = settings.LLM_MODEL
         self.top_k = settings.TOP_K_RESULTS
         self.similarity_threshold = settings.SIMILARITY_THRESHOLD
-        logger.info(f"RAG pipeline initialized with OpenAI model: {settings.LLM_MODEL}")
+        self.client = None
+        self.ollama_base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+
+        if self.provider == "groq":
+            self.client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        elif self.provider != "ollama":
+            raise ValueError(
+                f"Unsupported LLM_PROVIDER={settings.LLM_PROVIDER!r}. "
+                "Use 'ollama' or 'groq'."
+            )
+
+        logger.info(
+            "RAG pipeline initialized with %s model: %s",
+            self.provider,
+            self.model,
+        )
+
+    @staticmethod
+    def _api_score(score: float) -> float:
+        """Clamp vector similarity into the response schema's 0..1 range."""
+        return max(0.0, min(1.0, score))
 
     async def retrieve_relevant_chunks(
         self, 
@@ -96,26 +123,78 @@ class CustomRAGPipeline:
         return messages
 
     async def generate_response(self, messages: List[Dict[str, str]]) -> str:
-        """Generates response using OpenAI Chat Completion API"""
+        """Generates response using the configured chat provider."""
         try:
+            if self.provider == "ollama":
+                answer = await self._generate_with_ollama(messages)
+                logger.info(f"Generated response (Ollama): {answer[:100]}...")
+                return answer
+
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                max_tokens=settings.LLM_MAX_TOKENS,
                 temperature=settings.LLM_TEMPERATURE,
-                top_p=0.95
+                max_tokens=settings.LLM_MAX_TOKENS,
             )
-            
-            answer = response.choices[0].message.content.strip()
-            logger.info(f"Generated response: {answer[:100]}...")
+            answer = response.choices[0].message.content or ""
+            logger.info(f"Generated response (Groq): {answer[:100]}...")
             return answer
             
         except Exception as e:
-            logger.error(f"Generation error: {str(e)}")
+            logger.error(f"Generation error: {str(e)}", exc_info=True)
             return (
                 "I apologize, but I encountered an error generating a response. "
                 "Please try again or rephrase your question."
             )
+
+    async def _generate_with_ollama(
+        self,
+        messages: List[Dict[str, str]],
+    ) -> str:
+        response = await asyncio.to_thread(
+            self._post_ollama_chat,
+            messages,
+        )
+
+        message = response.get("message", {})
+        content = message.get("content")
+        if content:
+            return content.strip()
+
+        raise RuntimeError("Ollama chat response did not include content")
+
+    def _post_ollama_chat(self, messages: List[Dict[str, str]]) -> dict:
+        request = urllib.request.Request(
+            f"{self.ollama_base_url}/api/chat",
+            data=json.dumps(
+                {
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {
+                        "temperature": settings.LLM_TEMPERATURE,
+                        "num_predict": settings.LLM_MAX_TOKENS,
+                    },
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            message = body.strip() or exc.reason
+            raise RuntimeError(
+                f"Ollama chat request failed with HTTP {exc.code}: {message}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"Could not connect to Ollama at {self.ollama_base_url}. "
+                "Make sure Ollama is running."
+            ) from exc
 
     async def process_query(
         self, 
@@ -161,7 +240,7 @@ class CustomRAGPipeline:
                 {
                     "document": chunk.get('metadata', {}).get('source', 'Unknown'),
                     "chunk_index": chunk.get('metadata', {}).get('chunk_index', 0),
-                    "relevance_score": chunk.get('score', 0.0),
+                    "relevance_score": self._api_score(chunk.get('score', 0.0)),
                     "text_preview": chunk.get('metadata', {}).get('text', '')[:200]
                 }
                 for chunk in chunks
@@ -169,12 +248,13 @@ class CustomRAGPipeline:
             
             # Calculating confidence
             avg_score = sum(c.get('score', 0) for c in chunks) / len(chunks)
+            confidence_score = self._api_score(avg_score)
             
             return {
                 "response": response,
                 "sources": sources,
                 "session_id": session_id,
-                "confidence_score": round(avg_score, 2)
+                "confidence_score": round(confidence_score, 2)
             }
             
         except Exception as e:

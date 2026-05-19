@@ -11,13 +11,26 @@ class TextChunker:
     """Robust text chunking with fixed-size or semantic strategies using tiktoken."""
 
     def __init__(self):
-        try:
-            self.tokenizer = tiktoken.encoding_for_model(settings.LLM_MODEL)
-            logger.info(f"Tokenizer loaded for model: {settings.LLM_MODEL}")
-        except Exception as e:
-            # Fallback
-            logger.warning(f"Could not load tokenizer for {settings.LLM_MODEL}, using cl100k_base: {e}")
+        # Some model names (eg. Llama family) don't map automatically in
+        # older/newer tiktoken versions. Avoid calling
+        # `encoding_for_model` for known Llama-style names to prevent
+        # noisy library warnings — directly use `cl100k_base` instead.
+        model_name = (settings.LLM_MODEL or "").lower()
+        if "llama" in model_name:
+            logger.info(
+                f"Using cl100k_base tokenizer for LLM model: {settings.LLM_MODEL}"
+            )
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        else:
+            try:
+                self.tokenizer = tiktoken.encoding_for_model(settings.LLM_MODEL)
+                logger.info(f"Tokenizer loaded for model: {settings.LLM_MODEL}")
+            except Exception as e:
+                # Fallback to a widely-compatible encoding
+                logger.warning(
+                    f"Could not load tokenizer for {settings.LLM_MODEL}, using cl100k_base: {e}"
+                )
+                self.tokenizer = tiktoken.get_encoding("cl100k_base")
 
         self.chunk_size = settings.CHUNK_SIZE
         self.chunk_overlap = settings.CHUNK_OVERLAP
@@ -163,3 +176,8 @@ chunker = TextChunker()
 def chunk_document(text: str, strategy: str = "semantic") -> List[str]:
     """Convenience wrapper for chunking."""
     return chunker.chunk_text(text, strategy)
+
+
+def count_tokens(text: str) -> int:
+    """Convenience wrapper for token counting."""
+    return chunker.count_tokens(text)
