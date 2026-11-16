@@ -42,6 +42,8 @@ For the existing PostgreSQL/Pinecone deployment path, follow [Local setup](#loca
 
 ## Architecture and data flow
 
+Request, answer, invoice and review schemas are described in the [schema guide](models/README.md).
+
 1. `POST /api/ingest` streams a bounded upload, stores its original bytes under a generated ID, computes SHA-256, creates a PostgreSQL processing record, and returns **202** with a status URL.
 2. One bounded background queue processes one document at a time. PyMuPDF parsing and Tesseract run in a separate process group, which is killed on timeout. PostgreSQL records queued → extracting → indexing → ready, or failed.
 3. Each PDF page uses native text if it has at least 30 alphanumeric characters and no replacement characters. Pages with large image coverage (>40%) use OCR to capture scanned regions even when a native header exists. OCR **replaces** native text for that page. Original numbering is retained, including blank pages. Images become one-page documents.
