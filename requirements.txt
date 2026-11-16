@@ -51,3 +51,6 @@ mypy==1.7.1
 # Monitoring (Optional)
 prometheus-client==0.19.0
 sentence-transformers==2.2.2
+asyncpg==0.29.0
+# Persistent local application / isolated tests
+aiosqlite==0.20.0

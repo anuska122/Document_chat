@@ -20,3 +20,8 @@ uploads/
 data/
 storage/
 *.sqlite3
+# Reproducible synthetic binaries are generated, not versioned.
+evaluation/fixtures/
+.pytest_cache/
+.coverage
+htmlcov/

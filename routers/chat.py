@@ -5,11 +5,17 @@ from models.schemas import (
     ChatResponse,
     SourceChunk,
 )
-from services.rag import run_rag
+from services.rag import run_rag, rag_pipeline
 from services.redis_memory import get_chat_history, clear_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/chat/status")
+async def chat_status():
+    return await rag_pipeline.chat_status()
+
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_documents(request: ChatRequest):
@@ -27,15 +33,7 @@ async def chat_with_documents(request: ChatRequest):
         )
 
         sources_data = result.get("sources", [])
-        sources = [
-            SourceChunk(
-                document=src.get("document", "Unknown"),
-                chunk_index=src.get("chunk_index", 0),
-                relevance_score=src.get("relevance_score", 0.0),
-                text_preview=src.get("text_preview", "")[:200],
-            )
-            for src in sources_data
-        ]
+        sources = [SourceChunk(**src) for src in sources_data]
 
         logger.info(f"Response generated successfully ({len(sources)} sources).")
 
@@ -48,9 +46,13 @@ async def chat_with_documents(request: ChatRequest):
 
     except HTTPException:
         raise
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"Chat processing error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error while processing chat.")
+        raise HTTPException(
+            status_code=500, detail="Internal server error while processing chat."
+        )
 
 
 @router.get("/chat/history/{session_id}")
@@ -64,7 +66,9 @@ async def get_session_history(session_id: str):
             "messages": history,
         }
     except Exception as e:
-        logger.error(f"Error retrieving chat history for {session_id}: {e}", exc_info=True)
+        logger.error(
+            f"Error retrieving chat history for {session_id}: {e}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Failed to retrieve chat history.")
 
 
@@ -74,10 +78,16 @@ async def clear_session_history(session_id: str):
     try:
         await clear_session(session_id)
         logger.info(f"Cleared history for session {session_id}")
-        return {"status": "success", "message": f"History cleared for session {session_id}."}
+        return {
+            "status": "success",
+            "message": f"History cleared for session {session_id}.",
+        }
     except Exception as e:
-        logger.error(f"Error clearing chat history for {session_id}: {e}", exc_info=True)
+        logger.error(
+            f"Error clearing chat history for {session_id}: {e}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Failed to clear session history.")
+
 
 @router.get("/stats")
 async def get_system_stats():
@@ -101,4 +111,6 @@ async def get_system_stats():
         }
     except Exception as e:
         logger.error(f"Error retrieving system stats: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve system statistics.")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve system statistics."
+        )

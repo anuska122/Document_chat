@@ -51,7 +51,7 @@ class TextChunker:
 
     def _clean_text(self, text: str) -> str:
         """Normalize whitespace, remove control chars."""
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\s+", " ", text)
         text = text.strip()
         return text
 
@@ -84,9 +84,9 @@ class TextChunker:
         if not text:
             return []
 
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = re.split(r"(?<=[.!?])\s+", text)
         if not sentences:
-            return [text[:self.max_size]]
+            return [text[: self.max_size]]
 
         chunks = []
         current = []
@@ -102,7 +102,7 @@ class TextChunker:
             if sent_tokens > self.max_size:
                 if current:
                     chunk = " ".join(current)
-                    if self.count_tokens(chunk) >= self.min_size:
+                    if chunk:
                         chunks.append(chunk)
                     current = []
                     current_tokens = 0
@@ -150,7 +150,7 @@ class TextChunker:
 
         if current:
             final = " ".join(current).strip()
-            if self.count_tokens(final) >= self.min_size or not chunks:
+            if final:
                 chunks.append(final)
 
         logger.info(f"Semantic chunking → {len(chunks)} chunks")

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Document Chat</title>
+    <link rel="stylesheet" href="/assets/style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="/">Document Chat</a
+      ><span>Your documents, made clear.</span>
+    </header>
+    <main class="app-layout">
+      <aside class="sidebar">
+        <h2>Your documents</h2>
+        <form id="upload">
+          <input
+            hidden
+            id="file"
+            aria-label="Choose a document"
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.txt"
+            required
+          /><button class="primary upload-button" id="chooseFile" type="button">
+            + Add document
+          </button>
+        </form>
+        <p class="hint">PDF, PNG, JPG or text · up to 10 MB</p>
+        <p id="uploadStatus" class="feedback" role="status"></p>
+        <div id="documents" class="document-list"></div>
+        <details class="totals-section">
+          <summary>Approved invoice totals</summary>
+          <button id="summary" class="secondary">Calculate totals</button>
+          <div id="totals" class="hint"></div>
+        </details>
+      </aside>
+      <div class="workspace">
+        <section id="welcome" class="welcome">
+          <div class="welcome-icon" aria-hidden="true">↗</div>
+          <h1>Start with a document</h1>
+          <p>Upload a file to ask questions or review an invoice.</p>
+          <button id="welcomeUpload" class="primary">
+            Add your first document
+          </button>
+        </section>
+        <div id="documentWorkspace" hidden>
+          <div class="document-heading">
+            <div>
+              <p class="eyebrow">Selected document</p>
+              <h1 id="title"></h1>
+            </div>
+            <span id="statusBadge" class="badge"></span>
+          </div>
+          <p id="status" class="feedback" role="status"></p>
+          <nav class="tabs" role="tablist" aria-label="Document workspace">
+            <button
+              id="tab-ask"
+              role="tab"
+              aria-selected="true"
+              aria-controls="panel-ask"
+            >
+              Ask questions</button
+            ><button
+              id="tab-invoice"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-invoice"
+            >
+              Review invoice</button
+            ><button
+              id="tab-document"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-document"
+            >
+              View document
+            </button>
+          </nav>
+          <section
+            id="panel-ask"
+            class="panel"
+            role="tabpanel"
+            aria-labelledby="tab-ask"
+          >
+            <div class="section-heading">
+              <h2>What would you like to know?</h2>
+              <p>Answers include links to the pages they came from.</p>
+            </div>
+            <form id="chat">
+              <label class="sr-only" for="question">Your question</label>
+              <div class="question-row">
+                <input
+                  id="question"
+                  placeholder="e.g. What is the invoice total?"
+                  required
+                  maxlength="2000"
+                /><button id="askButton" class="primary">Ask</button>
+              </div>
+              <label class="checkbox-label"
+                ><input id="allDocs" type="checkbox" /> Include all processed
+                documents</label
+              >
+            </form>
+            <p id="chatStatus" class="feedback" role="status"></p>
+            <div id="answerArea" hidden>
+              <p class="eyebrow">Answer</p>
+              <p id="answer" role="status"></p>
+              <div id="citations" class="citations"></div>
+            </div>
+            <p id="chatHint" class="empty-hint">
+              Ask about a date, an amount, or a detail in your document.
+            </p>
+          </section>
+          <section
+            id="panel-invoice"
+            class="panel"
+            role="tabpanel"
+            aria-labelledby="tab-invoice"
+            hidden
+          >
+            <div class="section-heading review-heading">
+              <div>
+                <h2>Check the invoice details</h2>
+                <p>Correct anything that needs attention, then approve.</p>
+              </div>
+              <div id="exports" class="export-links" hidden>
+                <a id="json" target="_blank" rel="noopener">JSON</a
+                ><a id="csv">CSV</a>
+              </div>
+            </div>
+            <p id="reviewPending" class="empty-hint">
+              Invoice details will appear when processing finishes.
+            </p>
+            <details id="warningDetails" class="review-warnings" hidden>
+              <summary id="warningSummary"></summary>
+              <div id="warnings"></div>
+            </details>
+            <form id="review" hidden>
+              <div id="fields" class="field-grid"></div>
+              <div class="line-heading">
+                <h3>Line items</h3>
+                <button type="button" id="addItem" class="text-button">
+                  + Add item
+                </button>
+              </div>
+              <div id="items"></div>
+              <details class="review-note">
+                <summary>Add a review note</summary>
+                <label class="sr-only" for="note">Review note</label
+                ><textarea
+                  id="note"
+                  placeholder="Explain any warnings or duplicate decisions before approving"
+                ></textarea>
+              </details>
+              <div class="review-actions">
+                <button name="action" value="save" class="secondary">
+                  Save changes</button
+                ><button name="action" value="approve" class="primary">
+                  Approve invoice
+                </button>
+              </div>
+            </form>
+            <div id="reviewDetails" hidden>
+              <details>
+                <summary>Original extracted values</summary>
+                <div id="machine"></div>
+              </details>
+              <details>
+                <summary>Review history</summary>
+                <div id="audit"></div>
+              </details>
+            </div>
+          </section>
+          <section
+            id="panel-document"
+            class="panel document-panel"
+            role="tabpanel"
+            aria-labelledby="tab-document"
+            hidden
+          >
+            <div class="preview-toolbar">
+              <div class="page-controls">
+                <button
+                  id="previous"
+                  class="secondary"
+                  aria-label="Previous page"
+                >
+                  ←</button
+                ><span id="pageLabel"></span
+                ><button id="next" class="secondary" aria-label="Next page">
+                  →
+                </button>
+              </div>
+              <a id="original" target="_blank" rel="noopener"
+                >Open original ↗</a
+              >
+            </div>
+            <blockquote id="sourceQuote" hidden></blockquote>
+            <p id="previewPending" class="empty-hint">
+              Your document preview will appear here.
+            </p>
+            <div class="preview">
+              <img hidden id="preview" alt="Document page" />
+              <div id="highlights"></div>
+            </div>
+            <details id="textDetails">
+              <summary>Read extracted text</summary>
+              <pre id="pageText"></pre>
+              <div id="pageWarnings"></div>
+            </details>
+          </section>
+        </div>
+      </div>
+    </main>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>

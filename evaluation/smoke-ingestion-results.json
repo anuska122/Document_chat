@@ -1,0 +1,90 @@
+{
+  "server": "http://127.0.0.1:8011",
+  "split": "development",
+  "documents": 10,
+  "failure_rate": 0.0,
+  "note": "Includes polling overhead. Inspect server provider configuration before interpreting or comparing results.",
+  "results": [
+    {
+      "path": "fixtures/development/0_native.pdf",
+      "kind": "native",
+      "document_id": "doc_9ff8a90d5b4040d7a30eca7eb267eb63",
+      "status": "ready",
+      "message": "Ready for questions and review",
+      "ingestion_latency_ms": 290.28
+    },
+    {
+      "path": "fixtures/development/0_scanned.pdf",
+      "kind": "scanned",
+      "document_id": "doc_828f47fd9e7440d6a4e5724543c04c60",
+      "status": "ready",
+      "message": "Ready for questions and review",
+      "ingestion_latency_ms": 1048.03
+    },
+    {
+      "path": "fixtures/development/0_mixed.pdf",
+      "kind": "mixed",
+      "document_id": "doc_d23f4bc0f4e244e78f560b262aeabe73",
+      "status": "ready",
+      "message": "Ready for questions and review",
+      "ingestion_latency_ms": 1055.3
+    },
+    {
+      "path": "fixtures/development/0_png.png",
+      "kind": "png",
+      "document_id": "doc_686f9440001747e092e53a8f06a90cff",
+      "status": "ready",
+      "message": "Ready for questions and review",
+      "ingestion_latency_ms": 1045.92
+    },
+    {
+      "path": "fixtures/development/0_jpeg.jpg",
+      "kind": "jpeg",
+      "document_id": "doc_2aa3af90847d483eac9d85e78ea76da2",
+      "status": "ready",
+      "message": "Ready for questions and review",
+      "ingestion_latency_ms": 1046.95
+    },
+    {
+      "path": "fixtures/development/1_native.pdf",
+      "kind": "native",
+      "document_id": "doc_634d4fe4345e43bdbce7730c52910808",
+      "status": "ready",
+      "message": "Ready for questions and review",
+      "ingestion_latency_ms": 273.1
+    },
+    {
+      "path": "fixtures/development/1_scanned.pdf",
+      "kind": "scanned",
+      "document_id": "doc_e3145a6dcaa441fa9ea15ec4d5558c2c",
+      "status": "ready",
+      "message": "Ready for questions and review",
+      "ingestion_latency_ms": 1059.96
+    },
+    {
+      "path": "fixtures/development/1_mixed.pdf",
+      "kind": "mixed",
+      "document_id": "doc_841194ed791d495f81df3aee40881dbb",
+      "status": "ready",
+      "message": "Ready for questions and review",
+      "ingestion_latency_ms": 1168.98
+    },
+    {
+      "path": "fixtures/development/1_png.png",
+      "kind": "png",
+      "document_id": "doc_acbeed66e19c4cb7bba2da5429fc36aa",
+      "status": "ready",
+      "message": "Ready for questions and review",
+      "ingestion_latency_ms": 1045.67
+    },
+    {
+      "path": "fixtures/development/1_jpeg.jpg",
+      "kind": "jpeg",
+      "document_id": "doc_cef1b24daa5146c4ac4ed1a19a9156d3",
+      "status": "ready",
+      "message": "Ready for questions and review",
+      "ingestion_latency_ms": 1051.33
+    }
+  ],
+  "adapter_scope": "Isolated smoke server: real extraction/SQL/files/queue, deterministic embedding/vector/chat substitutes. Not a live provider performance benchmark."
+}

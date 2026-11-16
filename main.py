@@ -2,20 +2,21 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import settings
 from db.sql_db import init_db, close_db
 from db.vector_db import init_vector_db, close_vector_db
 from services.redis_memory import init_redis, close_redis
 from routers import ingest, chat
+from services.processing import start_worker, stop_worker
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pathlib import Path
 
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class Application:
         """Configure application middleware."""
         self._app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -49,19 +50,16 @@ class Application:
     def _setup_routes(self) -> None:
         """Register API routers."""
         self._app.include_router(
-            ingest.router,
-            prefix="/api",
-            tags=["Document Ingestion"]
+            ingest.router, prefix="/api", tags=["Document Ingestion"]
         )
         self._app.include_router(
-            chat.router,
-            prefix="/api",
-            tags=["Conversational RAG"]
+            chat.router, prefix="/api", tags=["Conversational RAG"]
         )
         logger.info("Routers registered")
 
     def _setup_lifespan(self) -> None:
         """Configure lifespan context manager."""
+
         @asynccontextmanager
         async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await self._startup()
@@ -83,12 +81,14 @@ class Application:
         await init_redis()
         logger.info("Redis initialized")
 
+        await start_worker()
         logger.info("All services ready")
 
     async def _shutdown(self) -> None:
         """Cleanup resources on shutdown."""
         logger.info("Shutting down RAG Backend...")
 
+        await stop_worker()
         await close_redis()
         logger.info("Redis closed")
 
@@ -129,18 +129,19 @@ async def health_check():
         "services": {
             "vector_db": "connected",
             "sql_db": "connected",
-            "redis": "connected"
-        }
+            "redis": "connected",
+        },
     }
 
 
 @app.get("/")
 async def root():
-    return {
-        "message": "Welcome to Conversational RAG Backend",
-        "docs": "/docs",
-        "health": "/health"
-    }
+    return FileResponse(Path(__file__).parent / "web" / "index.html")
+
+
+app.app.mount(
+    "/assets", StaticFiles(directory=Path(__file__).parent / "web"), name="assets"
+)
 
 
 # Expose the internal FastAPI instance for ASGI servers (uvicorn expects an ASGI app)
@@ -148,10 +149,5 @@ app = app.app
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
+
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="info")

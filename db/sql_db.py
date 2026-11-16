@@ -12,32 +12,32 @@ logger = logging.getLogger(__name__)
 engine = create_async_engine(
     settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
     echo=False,
-    future=True
+    future=True,
 )
 
 # async session factory
 AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
+    engine, class_=AsyncSession, expire_on_commit=False
 )
 
 # Base class for models
 Base = declarative_base()
 
-#Database Models
+# Database Models
+
 
 class Document(Base):
     """Document metadata table"""
+
     __tablename__ = "documents"
-    
+
     id = Column(String, primary_key=True)
     filename = Column(String, nullable=False)
     file_size_bytes = Column(Integer, nullable=False)
     upload_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
     chunk_count = Column(Integer, default=0)
     chunking_strategy = Column(String, nullable=False)
-    
+
     def to_dict(self):
         return {
             "document_id": self.id,
@@ -45,11 +45,12 @@ class Document(Base):
             "file_size_bytes": self.file_size_bytes,
             "upload_timestamp": self.upload_timestamp.isoformat(),
             "chunk_count": self.chunk_count,
-            "chunking_strategy": self.chunking_strategy
+            "chunking_strategy": self.chunking_strategy,
         }
 
 
-#Database Functions
+# Database Functions
+
 
 async def init_db():
     """Initialize database tables"""
@@ -79,12 +80,13 @@ async def close_db():
     except Exception as e:
         logger.error(f"Error closing database: {str(e)}")
 
+
 async def create_document(
     document_id: str,
     filename: str,
     file_size: int,
     chunking_strategy: str,
-    chunk_count: int = 0
+    chunk_count: int = 0,
 ):
     """Create document record"""
     async with AsyncSessionLocal() as session:
@@ -93,7 +95,7 @@ async def create_document(
             filename=filename,
             file_size_bytes=file_size,
             chunking_strategy=chunking_strategy,
-            chunk_count=chunk_count
+            chunk_count=chunk_count,
         )
         session.add(document)
         await session.commit()
@@ -105,6 +107,7 @@ async def get_document(document_id: str):
     """Getting document by ID"""
     async with AsyncSessionLocal() as session:
         from sqlalchemy import select
+
         result = await session.execute(
             select(Document).where(Document.id == document_id)
         )
@@ -116,6 +119,7 @@ async def get_all_documents():
     """Getting all documents"""
     async with AsyncSessionLocal() as session:
         from sqlalchemy import select
+
         result = await session.execute(select(Document))
         documents = result.scalars().all()
         return [doc.to_dict() for doc in documents]
@@ -125,16 +129,66 @@ async def get_stats():
     """Get database statistics"""
     async with AsyncSessionLocal() as session:
         from sqlalchemy import select, func
-        
+
         # Counting documents
         doc_count = await session.execute(select(func.count(Document.id)))
         total_docs = doc_count.scalar()
-        
+
         # chunks sum
         chunk_sum = await session.execute(select(func.sum(Document.chunk_count)))
         total_chunks = chunk_sum.scalar() or 0
-        
+
         return {
             "total_documents": total_docs,
             "total_chunks": int(total_chunks),
         }
+
+
+# Additive table: existing document metadata remains intact.
+from sqlalchemy import JSON, select
+from sqlalchemy.orm.attributes import flag_modified
+
+
+class IntelligenceDocument(Base):
+    __tablename__ = "intelligence_documents"
+    id = Column(String, primary_key=True)
+    payload = Column(JSON, nullable=False)
+
+
+async def save_intelligence(record):
+    async with AsyncSessionLocal() as session:
+        session.add(IntelligenceDocument(id=record["document_id"], payload=record))
+        await session.commit()
+
+
+async def intelligence_records():
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(select(IntelligenceDocument))).scalars().all()
+        return [row.payload for row in rows]
+
+
+async def intelligence_record(document_id):
+    async with AsyncSessionLocal() as session:
+        row = await session.get(IntelligenceDocument, document_id)
+        return row.payload if row else None
+
+
+async def update_intelligence(document_id, change, version=None):
+    async with AsyncSessionLocal() as session:
+        row = (
+            await session.execute(
+                select(IntelligenceDocument)
+                .where(IntelligenceDocument.id == document_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if not row:
+            raise KeyError(document_id)
+        data = dict(row.payload)
+        if version is not None and data["version"] != version:
+            raise ValueError("This document changed. Reload before saving.")
+        change(data)
+        row.payload = data
+        flag_modified(row, "payload")
+        await session.commit()
+        return data

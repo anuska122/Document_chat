@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "llama3.1"
     LLM_TEMPERATURE: float = 0.7
     LLM_MAX_TOKENS: int = 4096
+    OLLAMA_CONTEXT_WINDOW: int = 4096
+    OLLAMA_MAX_OUTPUT_TOKENS: int = 512
 
     # Pinecone
     PINECONE_API_KEY: str
@@ -56,7 +58,12 @@ class Settings(BaseSettings):
 
     # File config
     MAX_FILE_SIZE_MB: int = 10
-    ALLOWED_FILE_TYPES: list = [".pdf", ".txt"]
+    ALLOWED_FILE_TYPES: list = [".pdf", ".txt", ".png", ".jpg", ".jpeg"]
+    STORAGE_DIR: str = "storage"
+    MAX_DOCUMENT_PAGES: int = 50
+    PROCESSING_TIMEOUT_SECONDS: int = 180
+    OCR_PAGE_TIMEOUT_SECONDS: int = 30
+    OCR_LANGUAGE: str = "eng"
 
     # Chunking
     CHUNK_SIZE: int = 500
